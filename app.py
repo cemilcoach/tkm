@@ -1,128 +1,73 @@
 import streamlit as st
 import time
 
-# --- SAYFA AYARLARI (MOBİL İÇİN) ---
-st.set_page_config(
-    page_title="TKM Arena",
-    page_icon="🥊",
-    layout="centered", # Mobilde içeriği ortalar
-    initial_sidebar_state="collapsed" # Yan menüyü gizle
-)
+# --- MOBİL ODAKLI TEMİZ AYARLAR ---
+st.set_page_config(page_title="TKM Hızlı", layout="centered")
 
-# --- CSS İLE MOBİL GÖRÜNÜMÜ İYİLEŞTİRME ---
-# Butonları büyütür ve boşlukları ayarlar.
+# Gereksiz boşlukları ve menüleri gizleyen CSS
 st.markdown("""
-<style>
-    .stButton>button {
-        height: 3em;
-        font-size: 20px;
-        font-weight: bold;
-    }
-    h1 { text-align: center; }
-    .stRadio > div { justify-content: center; }
-</style>
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        .stButton>button {
+            height: 120px;
+            font-size: 50px !important;
+            border-radius: 20px;
+        }
+        .skor-text { font-size: 30px; font-weight: bold; text-align: center; }
+    </style>
 """, unsafe_allow_html=True)
 
-
-# --- ORTAK HAFIZA (SUNUCU TARAFI) ---
-# Bu kısım, iki farklı telefonun aynı veriyi görmesini sağlar.
 @st.cache_resource
-def get_shared_state():
-    # p1/p2: Oyuncuların hamleleri
-    # s1/s2: Skorlar
-    # round_over: Tur bitti mi kontrolü (skorun tekrar tekrar artmaması için)
-    return {"p1": None, "p2": None, "s1": 0, "s2": 0, "round_over": False}
+def get_db():
+    return {"p1": None, "p2": None, "s1": 0, "s2": 0}
 
-shared = get_shared_state()
+db = get_db()
 
-# --- YARDIMCI FONKSİYONLAR ---
-def kazananı_bul(p1, p2):
-    if p1 == p2: return "Berabere"
-    kurallar = {"🪨 Taş": "✂️ Makas", "📄 Kağıt": "🪨 Taş", "✂️ Makas": "📄 Kağıt"}
-    if kurallar[p1] == p2: return "P1"
-    return "P2"
+# --- ROL SEÇİMİ (Sadece ilk girişte) ---
+if "rol" not in st.session_state:
+    st.subheader("Rolünü Seç:")
+    c1, c2 = st.columns(2)
+    if c1.button("OYUNCU 1"): st.session_state.rol = "p1"; st.rerun()
+    if c2.button("OYUNCU 2"): st.session_state.rol = "p2"; st.rerun()
+    st.stop()
 
-def hamle_yap(oyuncu_rolu, hamle):
-    if oyuncu_rolu == "P1":
-        shared["p1"] = hamle
-    else:
-        shared["p2"] = hamle
-    st.rerun()
+rol = st.session_state.rol
+rakip = "p2" if rol == "p1" else "p1"
 
-# --- UYGULAMA BAŞLIYOR ---
-st.title("🥊 TKM Arena")
-st.caption("Aynı linki arkadaşına gönder. Biriniz P1, diğeriniz P2 olun!")
-
-# 1. ADIM: ROL SEÇİMİ
-# Mobilde yan yana sığması için horizontal kullandık.
-rol_secimi = st.radio("Önce Kim Olduğunu Seç:", ["🔴 1. Oyuncu (P1)", "🔵 2. Oyuncu (P2)"], horizontal=True)
-benim_rolum = "P1" if rol_secimi.startswith("🔴") else "P2"
-
-st.divider()
-
-# SKOR TABLOSU (Her zaman en üstte)
-col_s1, col_s2 = st.columns(2)
-col_s1.metric("🔴 P1 Skor", shared["s1"])
-col_s2.metric("🔵 P2 Skor", shared["s2"])
-
+# --- SKOR PANELİ ---
+st.markdown(f"<div class='skor-text'>🔴 {db['s1']}  —  🔵 {db['s2']}</div>", unsafe_allow_html=True)
 st.divider()
 
 # --- OYUN MANTIĞI ---
-
-# DURUM 1: İki oyuncu da hamle yaptıysa SONUCU GÖSTER
-if shared["p1"] is not None and shared["p2"] is not None:
-    if not shared["round_over"]:
-        # Sonucu hesapla ve skoru güncelle (sadece 1 kez)
-        sonuc = kazananı_bul(shared["p1"], shared["p2"])
-        if sonuc == "P1": shared["s1"] += 1
-        elif sonuc == "P2": shared["s2"] += 1
-        shared["round_over"] = True # Tur bitti olarak işaretle
-
-    st.subheader("🏁 Tur Sonucu")
+if db["p1"] and db["p2"]:
+    # Sonuç Hesaplama
+    p1, p2 = db["p1"], db["p2"]
+    win_map = {"🪨": "✂️", "📄": "🪨", "✂️": "📄"}
     
-    # Sonuçları görselleştir
-    res_col1, res_col2 = st.columns(2)
-    with res_col1:
-        st.markdown(f"**🔴 P1 Hamlesi:**")
-        st.write(f"### {shared['p1']}")
-    with res_col2:
-        st.markdown(f"**🔵 P2 Hamlesi:**")
-        st.write(f"### {shared['p2']}")
-    
-    sonuc_final = kazananı_bul(shared["p1"], shared["p2"])
-    if sonuc_final == "Berabere":
-        st.warning("🤝 Berabere!")
-    elif sonuc_final == benim_rolum:
-        st.balloons() # Kazananın ekranında balonlar
-        st.success("🎉 KAZANDIN!")
+    if p1 == p2:
+        st.warning(f"BERABERE! ({p1} vs {p2})")
+    elif win_map[p1] == p2:
+        if "counted" not in st.session_state: db["s1"] += 1; st.session_state.counted = True
+        st.success(f"P1 KAZANDI! {p1} > {p2}")
     else:
-        st.error("💀 KAYBETTİN!")
+        if "counted" not in st.session_state: db["s2"] += 1; st.session_state.counted = True
+        st.info(f"P2 KAZANDI! {p2} > {p1}")
 
-    # Yeni tur butonu (Mobilde tam genişlikte)
-    if st.button("🔄 Yeni Tur Başlat", type="primary", use_container_width=True):
-        shared["p1"] = None
-        shared["p2"] = None
-        shared["round_over"] = False
+    if st.button("YENİ TUR 🔄", use_container_width=True):
+        db["p1"], db["p2"] = None, None
+        if "counted" in st.session_state: del st.session_state.counted
         st.rerun()
 
-# DURUM 2: Oyun devam ediyor, hamle bekleniyor
+elif db[rol] is None:
+    st.write(f"Sıra Sende: **{rol.upper()}**")
+    col1, col2, col3 = st.columns(3)
+    if col1.button("🪨"): db[rol] = "🪨"; st.rerun()
+    if col2.button("📄"): db[rol] = "📄"; st.rerun()
+    if col3.button("✂️"): db[rol] = "✂️"; st.rerun()
+
 else:
-    benim_hamlem = shared["p1"] if benim_rolum == "P1" else shared["p2"]
-    rakip_hamlesi = shared["p2"] if benim_rolum == "P1" else shared["p1"]
-
-    # Alt Durum 2a: Ben henüz hamle yapmadım
-    if benim_hamlem is None:
-        st.subheader("⚡ Hamleni Yap!")
-        # Mobilde kolay tıklama için büyük ve yan yana butonlar
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
-        if btn_col1.button("🪨", use_container_width=True): hamle_yap(benim_rolum, "🪨 Taş")
-        if btn_col2.button("📄", use_container_width=True): hamle_yap(benim_rolum, "📄 Kağıt")
-        if btn_col3.button("✂️", use_container_width=True): hamle_yap(benim_rolum, "✂️ Makas")
-    
-    # Alt Durum 2b: Ben yaptım, rakibi bekliyorum
-    else:
-        st.info(f"✅ Hamlen ({benim_hamlem}) alındı.")
-        st.warning("⏳ Rakip bekleniyor... Ekran otomatik yenilenecek.")
-        # Rakip hamle yapana kadar her 1.5 saniyede bir sayfayı yenile
-        time.sleep(1.5)
-        st.rerun()
+    st.write("⌛ Rakip hamlesi bekleniyor...")
+    time.sleep(1)
+    st.rerun()
